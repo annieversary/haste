@@ -19,6 +19,8 @@ pub mod quantizedfloat; // TODO: try to not publicly expose quantizedfloat
 pub mod stringtables;
 pub(crate) mod varint;
 
+pub mod handler;
+
 // own crate re-exports
 pub use haste_protos as protos;
 pub(crate) use haste_vartype as vartype;
