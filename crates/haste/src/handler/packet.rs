@@ -75,8 +75,13 @@ pub trait IntoPacketHandler<PARAMS> {
 }
 
 impl<F> IntoPacketHandler<()> for F where F: Fn() {}
-impl<F, T1> IntoPacketHandler<(T1,)> for F where F: Fn(T1) {}
-impl<F, T1, T2, T3> IntoPacketHandler<(T1, T2, T3)> for F where F: Fn(T1, T2, T3) {}
+macro_rules! impl_into_packet_handler {
+    (
+        $($ty:ident),*
+    ) => {
+        impl<F, $($ty,)*> IntoPacketHandler<($($ty,)*)> for F where F: Fn($($ty,)*) {}
+    };
+}
 
 pub trait PacketHandler<S> {
     fn call(&self, state: &mut S, context: &Context, packet_type: u32, data: &[u8]);
@@ -95,39 +100,51 @@ where
         (self.func)();
     }
 }
-impl<F, S, T1> PacketHandler<S> for PacketHandlerWrapper<F, (T1,)>
-where
-    F: Fn(T1) + 'static,
-    T1: FromPacket<S> + 'static,
-{
-    fn call(&self, state: &mut S, context: &Context, packet_type: u32, data: &[u8]) {
-        let Some(t1) = T1::from_context(state, context, packet_type, data) else {
-            return;
-        };
 
-        (self.func)(t1);
-    }
-}
-impl<F, S, T1, T2, T3> PacketHandler<S> for PacketHandlerWrapper<F, (T1, T2, T3)>
-where
-    F: Fn(T1, T2, T3) + 'static,
-    T1: FromPacket<S> + 'static,
-    T2: FromPacket<S> + 'static,
-    T3: FromPacket<S> + 'static,
-{
-    fn call(&self, state: &mut S, context: &Context, packet_type: u32, data: &[u8]) {
-        let Some(t1) = T1::from_context(state, context, packet_type, data) else {
-            return;
-        };
-        let Some(t2) = T2::from_context(state, context, packet_type, data) else {
-            return;
-        };
-        let Some(t3) = T3::from_context(state, context, packet_type, data) else {
-            return;
-        };
+macro_rules! impl_packet_handler {
+    (
+        $($ty:ident),*
+    ) => {
+        #[allow(non_snake_case, unused_mut)]
+        impl<F, S, $($ty,)*> PacketHandler<S> for PacketHandlerWrapper<F, ($($ty,)*)>
+        where
+            F: Fn($($ty,)*) + 'static,
+            $( $ty: FromPacket<S> + 'static, )*
+        {
+            fn call(&self, state: &mut S, context: &Context, packet_type: u32, data: &[u8]) {
+                $(
+                    let Some($ty) = $ty::from_context(state, context, packet_type, data) else {
+                        return;
+                    };
+                )*
 
-        (self.func)(t1, t2, t3);
-    }
+                (self.func)($($ty,)*);
+            }
+        }
+    };
 }
 
-// TODO add all the other impls, using a macro
+#[rustfmt::skip]
+macro_rules! all_the_tuples {
+    ($name:ident) => {
+        $name!(T1);
+        $name!(T1, T2);
+        $name!(T1, T2, T3);
+        $name!(T1, T2, T3, T4);
+        $name!(T1, T2, T3, T4, T5);
+        $name!(T1, T2, T3, T4, T5, T6);
+        $name!(T1, T2, T3, T4, T5, T6, T7);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15);
+        $name!(T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16);
+    };
+}
+
+all_the_tuples!(impl_into_packet_handler);
+all_the_tuples!(impl_packet_handler);
