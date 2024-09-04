@@ -15,6 +15,18 @@ pub trait FromPacket: Sized {
     ) -> Option<Self::Item<'a>>;
 }
 
+impl<T: FromPacket> FromPacket for Option<T> {
+    type Item<'a> = <T as FromPacket>::Item<'a>;
+
+    fn from_context<'a>(
+        context: &'a Context,
+        packet_type: u32,
+        data: &'a [u8],
+    ) -> Option<Self::Item<'a>> {
+        T::from_context(context, packet_type, data)
+    }
+}
+
 impl FromPacket for &Context {
     type Item<'a> = &'a Context;
 
@@ -68,6 +80,7 @@ pub trait IntoPacketHandler<S, PARAMS> {
 }
 
 impl<S, F> IntoPacketHandler<S, ()> for F where F: Fn() {}
+// TODO Add impls for all functions without state. There's conflicting impls if we do it naively
 macro_rules! impl_into_packet_handler {
     (
         $($ty:ident),*
