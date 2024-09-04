@@ -1,10 +1,7 @@
 use haste::{
-    entities::{self, Entity},
-    fieldvalue::FieldValue,
     handler::HandlerVisitor,
-    parser::{self, Context, Parser, Visitor},
-    protos::{self, prost::Message},
-    stringtables::StringTable,
+    parser::{Context, Parser},
+    protos,
 };
 use std::{fs::File, io::BufReader};
 
@@ -34,10 +31,10 @@ struct State {
     deaths_at_tick: Vec<i32>,
 }
 
-fn hero_killed(state: &mut State, ctx: &Context, _msg: &protos::CCitadeLUserMsgHeroKilled) {
-    state.deaths.push(ctx.tick());
+fn hero_killed(state: &mut State, ctx: &Context, _msg: protos::CCitadelUserMsgHeroKilled) {
+    state.deaths_at_tick.push(ctx.tick());
 }
 
-fn chat_message(ctx: &Context, msg: &protos::CdotaUserMsgChatMessage) {
+fn chat_message(_state: &mut State, msg: protos::CdotaUserMsgChatMessage) {
     println!("{:?}", msg);
 }

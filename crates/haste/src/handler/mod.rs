@@ -1,5 +1,5 @@
 use crate::{
-    entities::{Entity, UpdateType},
+    // entities::{Entity, UpdateType},
     parser::{self, Context, Visitor},
 };
 
@@ -8,22 +8,14 @@ use packet::PacketHandler;
 
 use self::packet::{IntoPacketHandler, PacketHandlerWrapper};
 
+#[derive(Default)]
 pub struct HandlerVisitor<S> {
     packet_handlers: Vec<Box<dyn PacketHandler<S>>>,
     // entity_handlers: Vec<dyn EntityHandler>,
     state: S,
 }
 
-impl HandlerVisitor<()> {
-    pub fn new() -> Self {
-        Self {
-            packet_handlers: vec![],
-            // entity_handlers: vec![],
-            state: (),
-        }
-    }
-}
-impl<S> HandlerVisitor<S> {
+impl<S: 'static> HandlerVisitor<S> {
     pub fn with_state(state: S) -> Self {
         Self {
             packet_handlers: vec![],
@@ -35,11 +27,11 @@ impl<S> HandlerVisitor<S> {
     pub fn with<PARAMS, H>(mut self, handler: H) -> Self
     where
         PARAMS: 'static,
-        H: IntoPacketHandler<PARAMS> + 'static,
-        PacketHandlerWrapper<H, PARAMS>: PacketHandler<S>,
+        H: IntoPacketHandler<S, PARAMS> + 'static,
+        PacketHandlerWrapper<S, H, PARAMS>: PacketHandler<S>,
     {
-        let handler =
-            Box::new(<H as IntoPacketHandler<PARAMS>>::wrap(handler)) as Box<dyn PacketHandler<S>>;
+        let handler = Box::new(<H as IntoPacketHandler<S, PARAMS>>::wrap(handler))
+            as Box<dyn PacketHandler<S>>;
 
         self.packet_handlers.push(handler);
         self

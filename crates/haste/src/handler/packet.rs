@@ -1,48 +1,40 @@
-use std::{marker::PhantomData, num::Wrapping};
+use std::marker::PhantomData;
 
 use crate::{
     parser::Context,
     protos::{self, prost::Message},
 };
 
-pub trait FromPacket<S>: Sized {
-    fn from_context(
-        state: &mut S,
-        context: &Context,
+pub trait FromPacket: Sized {
+    type Item<'a>;
+
+    fn from_context<'a>(
+        context: &'a Context,
         packet_type: u32,
-        data: &[u8],
-    ) -> Option<Self>;
+        data: &'a [u8],
+    ) -> Option<Self::Item<'a>>;
 }
 
-impl<'a, S> FromPacket<S> for &'a Context {
-    fn from_context(
-        _state: &mut S,
+impl FromPacket for &Context {
+    type Item<'a> = &'a Context;
+
+    fn from_context<'a>(
         context: &'a Context,
         _packet_type: u32,
-        _data: &[u8],
-    ) -> Option<Self> {
+        _data: &'a [u8],
+    ) -> Option<&'a Context> {
         Some(context)
     }
 }
 
-impl<'a, S> FromPacket<S> for &'a mut S {
-    fn from_context(
-        state: &'a mut S,
-        _context: &Context,
-        _packet_type: u32,
-        _data: &[u8],
-    ) -> Option<Self> {
-        Some(state)
-    }
-}
+impl FromPacket for protos::CCitadelUserMsgHeroKilled {
+    type Item<'a> = Self;
 
-impl<S> FromPacket<S> for protos::CCitadelUserMsgHeroKilled {
-    fn from_context(
-        _state: &mut S,
-        _context: &Context,
+    fn from_context<'a>(
+        _context: &'a Context,
         packet_type: u32,
-        data: &[u8],
-    ) -> Option<Self> {
+        data: &'a [u8],
+    ) -> Option<Self::Item<'a>> {
         if protos::CitadelUserMessageIds::KEUserMsgHeroKilled as u32 == packet_type {
             Self::decode(data).ok()
         } else {
@@ -50,13 +42,14 @@ impl<S> FromPacket<S> for protos::CCitadelUserMsgHeroKilled {
         }
     }
 }
-impl<S> FromPacket<S> for protos::CdotaUserMsgChatMessage {
-    fn from_context(
-        _state: &mut S,
-        _context: &Context,
+impl FromPacket for protos::CdotaUserMsgChatMessage {
+    type Item<'a> = Self;
+
+    fn from_context<'a>(
+        _context: &'a Context,
         packet_type: u32,
-        data: &[u8],
-    ) -> Option<Self> {
+        data: &'a [u8],
+    ) -> Option<Self::Item<'a>> {
         if protos::EDotaUserMessages::DotaUmChatMessage as u32 == packet_type {
             Self::decode(data).ok()
         } else {
@@ -65,8 +58,8 @@ impl<S> FromPacket<S> for protos::CdotaUserMsgChatMessage {
     }
 }
 
-pub trait IntoPacketHandler<PARAMS> {
-    fn wrap<F>(func: F) -> PacketHandlerWrapper<F, PARAMS> {
+pub trait IntoPacketHandler<S, PARAMS> {
+    fn wrap<F>(func: F) -> PacketHandlerWrapper<S, F, PARAMS> {
         PacketHandlerWrapper {
             func,
             _phantom: Default::default(),
@@ -74,12 +67,12 @@ pub trait IntoPacketHandler<PARAMS> {
     }
 }
 
-impl<F> IntoPacketHandler<()> for F where F: Fn() {}
+impl<S, F> IntoPacketHandler<S, ()> for F where F: Fn() {}
 macro_rules! impl_into_packet_handler {
     (
         $($ty:ident),*
     ) => {
-        impl<F, $($ty,)*> IntoPacketHandler<($($ty,)*)> for F where F: Fn($($ty,)*) {}
+        impl<S, F, $($ty,)*> IntoPacketHandler<S, ($($ty,)*)> for F where F: Fn(&mut S, $($ty,)*) {}
     };
 }
 
@@ -87,12 +80,12 @@ pub trait PacketHandler<S> {
     fn call(&self, state: &mut S, context: &Context, packet_type: u32, data: &[u8]);
 }
 
-pub(crate) struct PacketHandlerWrapper<F, PARAMS> {
+pub struct PacketHandlerWrapper<S, F, PARAMS> {
     func: F,
-    _phantom: PhantomData<PARAMS>,
+    _phantom: PhantomData<(S, PARAMS)>,
 }
 
-impl<S, F> PacketHandler<S> for PacketHandlerWrapper<F, ()>
+impl<S, F> PacketHandler<S> for PacketHandlerWrapper<S, F, ()>
 where
     F: Fn() + 'static,
 {
@@ -106,19 +99,26 @@ macro_rules! impl_packet_handler {
         $($ty:ident),*
     ) => {
         #[allow(non_snake_case, unused_mut)]
-        impl<F, S, $($ty,)*> PacketHandler<S> for PacketHandlerWrapper<F, ($($ty,)*)>
+        impl<F, S, $($ty,)*> PacketHandler<S> for PacketHandlerWrapper<S, F, ($($ty,)*)>
         where
-            F: Fn($($ty,)*) + 'static,
-            $( $ty: FromPacket<S> + 'static, )*
+            S: 'static,
+            F: Fn(&mut S, $(<$ty as FromPacket>::Item<'_>,)*) + 'static,
+            $( $ty: FromPacket + 'static, )*
         {
-            fn call(&self, state: &mut S, context: &Context, packet_type: u32, data: &[u8]) {
+            fn call(
+                &self,
+                state: &mut S,
+                context: &Context,
+                packet_type: u32,
+                data: &[u8],
+            ) {
                 $(
-                    let Some($ty) = $ty::from_context(state, context, packet_type, data) else {
+                    let Some($ty) = $ty::from_context(context, packet_type, data) else {
                         return;
                     };
                 )*
 
-                (self.func)($($ty,)*);
+                (self.func)(state, $($ty,)*);
             }
         }
     };
